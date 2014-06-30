@@ -1,0 +1,231 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use Data::Dumper;
+use Scalar::Util qw(looks_like_number);
+
+use TTools::Messages;
+use TTools::Misc qw(tIsInArray tShouldIContinue);
+use TTools::FileArray qw(tAppendArrayToFile);
+use TTools::MySqlConnector;
+
+#> Variables
+my @rawfields = qw(start study s v a browser os scsize inizoom);
+my ($db,$user,$pass) = qw(mousetrack mousetrack kay133);
+my ($file,$widreplace);
+
+#> --------------------------------------------------------------------------------------------------------------------------------------------
+#> Pre-process.
+
+
+#> We need a file to append to.
+if ($#ARGV==-1) { die "!> No output file. An output file is needed to store the results of the processing, OK?\n"; }
+my $file = shift(@ARGV);
+if (-e $file && !-w $file) { die "!> Cannot write $file.\n"; }
+
+#> We greate a connection to the database and a log to complain to.
+my $dbh = TTools::MySqlConnector->new($db,$user,$pass);
+my $log  = TTools::Messages->new();
+$dbh->setLog($log);
+$log->logStr("Starting operation, connected to $db\@localhost:$user");
+
+#> We check if there are events to process in the event table. If not, we say we have nothing to do and quit.
+my $events = $dbh->select("select id,content,`when` from event where processed=0 order by `when` limit 1000");
+if (!defined($events))
+{
+	$log->logStr("Cannot make queries to the database. This is awful. I'm quitting.");
+	finish(1);
+}
+if ($#{$events}==-1)
+{
+	$log->logStr("No pending events. I don't have to do anything, yay!");
+	finish(0);
+}
+
+
+#> --------------------------------------------------------------------------------------------------------------------------------------------
+#> --------------------------------------------------------------------------------------------------------------------------------------------
+#> Process.
+foreach my $event (@{$events})
+{
+	my ($id, $content, $when) = @{$event};
+
+	#> We use this var to remember if we can delete this field or not.
+	my $markasprocessed = 0;
+	my @xpl;
+
+	#> We obtain several important fields
+	my $pairs = {};
+	foreach my $fld (@rawfields)
+	{ $pairs->{$fld} = extractfield($fld, $content); }
+
+	#> We rename some fields.
+	myrename($pairs, 'start', 'wid');
+	myrename($pairs, 's', 'scenario');
+	myrename($pairs, 'v', 'version');
+	myrename($pairs, 'a', 'condition');
+
+	#> We split scsize into coordinates.
+	($pairs->{'scsizex'}, $pairs->{'scsizey'}) = split(/,/, $pairs->{'scsize'});
+	delete($pairs->{'scsize'});
+
+	#> We don't want that many decimal values in inizoom
+	$pairs->{'inizoom'} = sprintf("%.2f", $pairs->{'inizoom'});
+
+	#> Just because it's more comfortable
+	my $wid = $pairs->{'wid'};
+	$content =~ /^(\d+):/;
+	$pairs->{'inioffset'} = $1;
+
+	#> Exceptions:
+	if (tIsInArray($wid, qw(A2NUXAJFPAX4Z2 Atesting Atestingtest testing at At)))
+	{
+		$log->logStr("Run ($wid,$when) seems a test and not a real run.");
+		$markasprocessed = -1;
+	}
+	else
+	{
+		my @xpl = split(/#/, $content);
+
+		if ($#xpl==-1)
+		{
+			$log->logStr("Run ($wid,$when) seems to be empty (server's hiccup?).");
+			$markasprocessed = -1;
+		}
+
+		#> Now, the serious stuff.
+		else
+		{
+			#> Now we attempt to insert the previous stuff
+			#> An important note: the following code assumes that order of elements returned by keys() and values() is the same.
+			#> According to http://perldoc.perl.org/functions/keys.html, the relative correspondance is 'guaranteed'.
+			#> I'm not assuming anything about the order of elements within keys() or within values().
+			my $rid = $dbh->insert('participantevent', $pairs);
+
+			if (defined($rid))
+			{
+				my $notinserted = '';
+
+				#> We iterate over all lines containing a TIME:EVENT(SIGNAL)
+				foreach my $fld (@xpl)
+				{
+					$fld =~ /^(\d+):([^\(]+)\((.*)\)$/;
+
+					#> If it was one of the raw signals, it's OK to ignore it.
+					if (tIsInArray($2, @rawfields))
+					{ next; }
+
+					my ($t, $event, $signal) = ($1, $2, $3);
+					if (!$t || !$event) #> signal *can* be missing.
+					{
+						push(@{$notinserted}, $fld);
+						next;
+					}
+
+					#> We already inserted in table:participantevent, now we'll do the same with table:atomicevent.
+					my $newpairs = {
+						'rid' => $rid,
+						't' => $t - $pairs->{'inioffset'}
+					};
+
+					if (tIsInArray($event, qw(vpsize scpos mpos)))
+					{
+						$newpairs->{'event'} = $event;
+						($newpairs->{'x'}, $newpairs->{'y'}) = split(/,/, $signal);
+					}
+
+					elsif (tIsInArray($event, qw(zoom typed)))
+					{
+						$newpairs->{'event'} = $event;
+						$newpairs->{'content'} = $signal;
+					}
+
+					elsif (tIsInArray($event, qw(iev)))
+					{
+						$newpairs->{'event'} = 'event';
+						$newpairs->{'content'} = $signal;
+					}
+
+					elsif ($event eq 'click')
+					{
+						$newpairs->{'event'} = 'click';
+						$signal =~ /^(\d+),(\d+)\@(.*)$/;
+						if ($1 && $2) 						#> We don't consider (0,0) to be normal coordinates.
+						{ ($newpairs->{'x'}, $newpairs->{'y'}) = ($1, $2); }
+						if ($3)
+						{ $newpairs->{'content'} = $3; }
+					}
+
+					else
+					{
+						$newpairs->{'event'} = 'unknown';
+						$newpairs->{'content'} = "$event:$signal";
+					}
+
+					#> We try to insert all the details into the table atomicevent.
+					if (!defined($dbh->insert('atomicevent', $newpairs)))
+					{
+						$notinserted .= $dbh->getinsertquery();
+					}
+				}
+
+				if ($notinserted eq '')
+				{
+					$log->logStr("Run ($wid,$when) successfully procesed.");
+					$markasprocessed = 1;
+				}
+				else
+				{
+					$log->logStr("Run ($wid,$when) was not fully processed. These are the things I could not process there: $notinserted");
+					$markasprocessed = -1;
+				}
+			}
+			else
+			{
+				$log->logStr("Run ($wid,$when) could not be inserted into table run, and thus it won't be marked as processed.");
+				$markasprocessed = -1;
+			}
+		}
+	}
+
+	my $tmpstr = "Event ($id,$wid,$when)";
+
+	if ($markasprocessed!=0)
+	{
+		if ($dbh->do("update event set processed=$markasprocessed where id='$id'")>0)
+		{ $log->logStr("$tmpstr was marked as requested."); }
+		else
+		{ $log->logStr("WARNING: I failed at trying to mark $tmpstr. Please check the event table to see what happened there."); }
+	}
+}
+finish(0);
+
+
+#> --------------------------------------------------------------------------------------------------------------------------------
+#> --------------------------------------------------------------------------------------------------------------------------------
+#> --------------------------------------------------------------------------------------------------------------------------------
+sub finish
+{
+	my $rc = shift;
+	$log->logStr("Ending operation.\n");
+	tAppendArrayToFile($file, @{$log->getLogTimeAndMsg()});
+	exit($rc);
+}
+
+sub extractfield
+{
+	my ($fld, $str) = @_;
+
+	if ($str =~ /:$fld\(([^\)]+)\)#/)
+	{ return $1; }
+	else
+	{ return undef; }
+}
+
+sub myrename
+{
+	my ($ref, $orig, $copy) = @_;
+	$ref->{$copy} = $ref->{$orig};
+	delete($ref->{$orig});
+}

@@ -1,0 +1,33 @@
+body
+{
+	margin:0px;
+	border:0px;
+	padding:5px;
+}
+
+p
+{
+	font-family:Georgia;
+	font-size:14px;
+	margin:10px 0px;
+	padding:10px;
+	border-bottom:1px solid black;
+}
+
+div.box
+{
+	position:absolute;
+	margin:0px;
+	padding:5px;
+	text-align:left;
+	vertical-align:top;
+	width:100px;
+	border:1px solid #000000;
+	box-shadow:5px 5px 5px #888888;
+	border-radius:7px;
+}
+
+.trackable:hover
+{
+	border:1px dashed red;
+}

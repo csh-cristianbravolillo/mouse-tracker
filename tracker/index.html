@@ -1,0 +1,28 @@
+<html>
+<head>
+	<title>Mouse tracking system v0.1, template page</title>
+	<script type='text/javascript' src='files/jquery.js'></script>
+	<script type='text/javascript' src='files/mt-0.1.js'></script>
+	<script type='text/javascript'>
+		// If we are also interested in knowing whether the browser window is resized, we set this to true.
+		mt_detect_resize = true;
+
+		// This function must be invoked, and it has to go last.
+		$(document).ready(init);
+	</script>
+	<link rel='stylesheet' type='text/css' href='files/styles.css'/>
+</head>
+
+<body>
+	<p>This is an example of a page being tracked.</p>
+
+	<!-- All objects marked with a css class 'trackable' will be tracked in terms of mouse enters, mouse leaves, and clicks. -->
+	<!-- All objects marked as trackable should also have an 'id', because the object needs to be identified -->
+	<div class='box trackable' id='one' style='top:60px;left:120px;background-color:red;'>I'm one.</div>
+	<div class='box trackable' id='two' style='top:120px;left:320px;background-color:green;'>I'm two.</div>
+	<div class='box trackable' id='three' style='top:220px;left:220px;background-color:yellow;'>I'm three.</div>
+
+	<!-- All other objects are displayed in the page, but will be ignored in terms of the tracking. -->
+	<div class='box'>This box will be ignored.</div>
+</body>
+</html>
