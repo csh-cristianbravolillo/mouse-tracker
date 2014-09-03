@@ -2,8 +2,19 @@
 <head>
 	<title>Mouse tracking system v0.1, template page</title>
 	<script type='text/javascript' src='files/jquery.js'></script>
+	<script type='text/javascript' src='files/tfda-0.1.js'></script>
 	<script type='text/javascript' src='files/mt-0.1.js'></script>
 	<script type='text/javascript'>
+
+		/* We create a very simple workflow to demonstrate the capabilities of the tracking module.
+		 * The automaton is: s_start --one--> s_one --two--> s_two --three--> s_end
+		 * In the transition between s_two and s_end, when three is clicked, we invoke the submitData()
+		 * method, to store all collected data up to the moment.
+		 */
+		fda.addTransition('s_start', 'one', 's_one');
+		fda.addTransition('s_one', 'two', 's_two');
+		fda.addTransition('s_two', 'three', 's_end', function() { submitData() });
+
 		// If we are also interested in knowing whether the browser window is resized, we set this to true.
 		mt_detect_resize = true;
 

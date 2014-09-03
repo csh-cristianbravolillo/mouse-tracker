@@ -11,7 +11,6 @@ var mt_pid = null;				// Participant ID.
 var mt_posturl = '';			// URL to which the tracking will be posted.
 var mt_rprt = new Array();		// Main array wherein all events will be kept.
 var mt_rprt_offset = 0;			// Offset of the page loading.
-var mt_current_state = null;	// The state of the automaton.
 var mt_freq_sem = true;			// Semaphor to control the frequency to poll mouse movements.
 var mt_dxc = 0;					// Delayed X Coordinate; used to limit the sensibility of the logging of mouse movements.
 var mt_dyc = 0;					// Delayed Y Coordinate.
@@ -19,12 +18,15 @@ var mt_mms = 5;					// Mouse movements sensitivity. If the mouse does not move m
 var mt_silent = false;			// Whether the submitData function should stay silent or not.
 var mt_name = '';				// Name of the current 'project'.
 
+/**
+ * Init function.
+ */
 function init()
 {
 	// We obtain the timing of the first load of the page and report it, along with data about the status of the viewport.
 	mt_rprt_offset = getInstant();
 	report('begin', 'offset=' + mt_rprt_offset + ';vpw=' + $(window).width() + ';vph=' + $(window).height() + ';');
-	mt_current_state = 's_start';
+	fda.start();
 
 	// We set the posturl. It may be put manually, but it's better automatically.
 	mt_posturl = $(location).attr('protocol') + '//' + $(location).attr('hostname') + $(location).attr('pathname');
@@ -74,7 +76,7 @@ function init()
 	$('.trackable')
 		.click(function(e) {
 			report('m-clk', 'id=' + $(this).attr('id') + ';x=' + e.pageX + ';y=' + e.pageY + ';which=' + e.which + ';');
-			checkStates($(this).attr('id'));
+			fda.next($(this).attr('id'));
 		})
 		.mouseenter(function() {
 			report('m-ent', 'id=' + $(this).attr('id') + ';');
@@ -126,55 +128,4 @@ function submitData(silent)
 		if (!mt_silent)
 			console.log('mt.submitData(): Network or submission error.');
 	});
-}
-
-/* The finite-states machine */
-function checkStates(signal)
-{
-	// ---------------------------------------------------------------------------------------------
-	if (mt_current_state=='s_start')
-	{
-		switch (signal)
-		{
-			case 'one':
-				// Some things should occur here.
-				mt_current_state = 's_one';
-				break;
-		}
-	}
-
-	// ---------------------------------------------------------------------------------------------
-	else if (mt_current_state=='s_one')
-	{
-		switch (signal)
-		{
-			case 'two':
-				// Some things should occur here.
-				mt_current_state = 's_two';
-				break;
-
-			default:
-				// Some things should occur here.
-				mt_current_state = 's_start';
-				break;
-		}
-	}
-
-	// ---------------------------------------------------------------------------------------------
-	else if (mt_current_state=='s_two')
-	{
-		switch (signal)
-		{
-			case 'three':
-				// Some things should occur here. This is only an example.
-				submitData();
-				mt_current_state = 's_end';
-				break;
-
-			default:
-				// Some things should occur here.
-				mt_current_state = 's_start';
-				break;
-		}
-	}
 }
